@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { Fn, Stack, StackProps, RemovalPolicy, aws_s3 as s3, aws_s3_deployment as s3deploy, aws_cloudfront as cloudfront, aws_cloudfront_origins as origins, aws_lambda as lambda, aws_iam as iam, Duration, CfnOutput, aws_logs as logs } from 'aws-cdk-lib';
+import { Fn, Stack, StackProps, RemovalPolicy, aws_s3 as s3, aws_s3_deployment as s3deploy, aws_cloudfront as cloudfront, aws_cloudfront_origins as origins, aws_lambda as lambda, aws_iam as iam, Duration, CfnOutput, aws_logs as logs, aws_certificatemanager as acm } from 'aws-cdk-lib';
 import { CfnDistribution } from "aws-cdk-lib/aws-cloudfront";
 import { Construct } from 'constructs';
 import { getOriginShieldRegion } from './origin-shield';
@@ -16,6 +16,8 @@ var S3_IMAGE_BUCKET_NAME: string;
 // CloudFront parameters
 var CLOUDFRONT_ORIGIN_SHIELD_REGION = getOriginShieldRegion(process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-east-1');
 var CLOUDFRONT_CORS_ENABLED = 'true';
+var CLOUDFRONT_CUSTOM_DOMAIN: string;
+var CLOUDFRONT_CERTIFICATE_ARN: string;
 // Parameters of transformed images
 var S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION = '90';
 var S3_TRANSFORMED_IMAGE_CACHE_TTL = 'max-age=31622400';
@@ -55,6 +57,8 @@ export class ImageOptimizationStack extends Stack {
     S3_IMAGE_BUCKET_NAME = this.node.tryGetContext('S3_IMAGE_BUCKET_NAME') || S3_IMAGE_BUCKET_NAME;
     CLOUDFRONT_ORIGIN_SHIELD_REGION = this.node.tryGetContext('CLOUDFRONT_ORIGIN_SHIELD_REGION') || CLOUDFRONT_ORIGIN_SHIELD_REGION;
     CLOUDFRONT_CORS_ENABLED = this.node.tryGetContext('CLOUDFRONT_CORS_ENABLED') || CLOUDFRONT_CORS_ENABLED;
+    CLOUDFRONT_CUSTOM_DOMAIN = this.node.tryGetContext('CLOUDFRONT_CUSTOM_DOMAIN') || CLOUDFRONT_CUSTOM_DOMAIN;
+    CLOUDFRONT_CERTIFICATE_ARN = this.node.tryGetContext('CLOUDFRONT_CERTIFICATE_ARN') || CLOUDFRONT_CERTIFICATE_ARN;
     LAMBDA_MEMORY = this.node.tryGetContext('LAMBDA_MEMORY') || LAMBDA_MEMORY;
     LAMBDA_TIMEOUT = this.node.tryGetContext('LAMBDA_TIMEOUT') || LAMBDA_TIMEOUT;
     MAX_IMAGE_SIZE = this.node.tryGetContext('MAX_IMAGE_SIZE') || MAX_IMAGE_SIZE;
@@ -142,8 +146,11 @@ export class ImageOptimizationStack extends Stack {
 
     // IAM policy to read from the S3 bucket containing the original images
     const s3ReadOriginalImagesPolicy = new iam.PolicyStatement({
-      actions: ['s3:GetObject'],
-      resources: ['arn:aws:s3:::' + originalImageBucket.bucketName + '/*'],
+      actions: ['s3:GetObject', 's3:ListBucket'],
+      resources: [
+        'arn:aws:s3:::' + originalImageBucket.bucketName + '/*',
+        'arn:aws:s3:::' + originalImageBucket.bucketName
+      ],
     });
 
     // statements of the IAM policy to attach to Lambda
@@ -243,10 +250,24 @@ export class ImageOptimizationStack extends Stack {
       });
       imageDeliveryCacheBehaviorConfig.responseHeadersPolicy = imageResponseHeadersPolicy;
     }
-    const imageDelivery = new cloudfront.Distribution(this, 'imageDeliveryDistribution', {
+
+    // Configure custom domain and certificate if provided
+    var distributionProps: any = {
       comment: 'image optimization - image delivery',
       defaultBehavior: imageDeliveryCacheBehaviorConfig
-    });
+    };
+
+    if (CLOUDFRONT_CUSTOM_DOMAIN && CLOUDFRONT_CERTIFICATE_ARN) {
+      const certificate = acm.Certificate.fromCertificateArn(
+        this,
+        'CloudFrontCertificate',
+        CLOUDFRONT_CERTIFICATE_ARN
+      );
+      distributionProps.domainNames = [CLOUDFRONT_CUSTOM_DOMAIN];
+      distributionProps.certificate = certificate;
+    }
+
+    const imageDelivery = new cloudfront.Distribution(this, 'imageDeliveryDistribution', distributionProps);
 
     // ADD OAC between CloudFront and LambdaURL
     const oac = new cloudfront.CfnOriginAccessControl(this, "OAC", {
@@ -276,6 +297,18 @@ export class ImageOptimizationStack extends Stack {
     new CfnOutput(this, 'ImageDeliveryDomain', {
       description: 'Domain name of image delivery',
       value: imageDelivery.distributionDomainName
+    });
+
+    if (CLOUDFRONT_CUSTOM_DOMAIN) {
+      new CfnOutput(this, 'CustomDomain', {
+        description: 'Custom domain for image delivery',
+        value: CLOUDFRONT_CUSTOM_DOMAIN
+      });
+    }
+
+    new CfnOutput(this, 'CloudFrontDistributionId', {
+      description: 'CloudFront Distribution ID',
+      value: imageDelivery.distributionId
     });
   }
 }

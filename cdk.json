@@ -29,6 +29,13 @@
     "@aws-cdk/core:target-partitions": [
       "aws",
       "aws-cn"
-    ]
+    ],
+    "S3_IMAGE_BUCKET_NAME": "dirtyvocal-assets",
+    "STORE_TRANSFORMED_IMAGES": "true",
+    "LAMBDA_MEMORY": "2000",
+    "LAMBDA_TIMEOUT": "60",
+    "CLOUDFRONT_CORS_ENABLED": "true",
+    "S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION": "90",
+    "MAX_IMAGE_SIZE": "26214400"
   }
 }
