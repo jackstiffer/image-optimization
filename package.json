@@ -9,7 +9,11 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "deploy:primary": "npm run build && npm run cdk deploy -- -c S3_IMAGE_BUCKET_NAME='dirtyvocal-assets' --require-approval never",
+    "deploy:stlash": "npm run build && npm run cdk deploy -- -c S3_IMAGE_BUCKET_NAME='stlash-asserts' -c STACK_NAME='ImgTransformationStack-StlashAsserts' --require-approval never",
+    "deploy:new": "npm run build && npm run cdk deploy -- --require-approval never",
+    "destroy:stlash": "npm run cdk destroy -- -c STACK_NAME='ImgTransformationStack-StlashAsserts' --force"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",

@@ -29,6 +29,8 @@ var LAMBDA_MEMORY = '1500';
 var LAMBDA_TIMEOUT = '60';
 // Whether to deploy a sample website referenced in https://aws.amazon.com/blogs/networking-and-content-delivery/image-optimization-using-amazon-cloudfront-and-aws-lambda/
 var DEPLOY_SAMPLE_WEBSITE = 'false';
+// Whether to skip CloudFront creation (for secondary deployments that share CloudFront)
+var SKIP_CLOUDFRONT = 'false';
 
 type ImageDeliveryCacheBehaviorConfig = {
   origin: any;
@@ -63,6 +65,7 @@ export class ImageOptimizationStack extends Stack {
     LAMBDA_TIMEOUT = this.node.tryGetContext('LAMBDA_TIMEOUT') || LAMBDA_TIMEOUT;
     MAX_IMAGE_SIZE = this.node.tryGetContext('MAX_IMAGE_SIZE') || MAX_IMAGE_SIZE;
     DEPLOY_SAMPLE_WEBSITE = this.node.tryGetContext('DEPLOY_SAMPLE_WEBSITE') || DEPLOY_SAMPLE_WEBSITE;
+    SKIP_CLOUDFRONT = this.node.tryGetContext('SKIP_CLOUDFRONT') || SKIP_CLOUDFRONT;
     
 
     // deploy a sample website for testing if required
@@ -207,8 +210,10 @@ export class ImageOptimizationStack extends Stack {
       }),
     );
 
-    // Create a CloudFront Function for url rewrites
-    const urlRewriteFunction = new cloudfront.Function(this, 'urlRewrite', {
+    // Only create CloudFront if not explicitly skipped
+    if (SKIP_CLOUDFRONT !== 'true') {
+      // Create a CloudFront Function for url rewrites
+      const urlRewriteFunction = new cloudfront.Function(this, 'urlRewrite', {
       code: cloudfront.FunctionCode.fromFile({ filePath: 'functions/url-rewrite/index.js', }),
       functionName: `urlRewriteFunction${this.node.addr}`,
     });
@@ -309,6 +314,33 @@ export class ImageOptimizationStack extends Stack {
     new CfnOutput(this, 'CloudFrontDistributionId', {
       description: 'CloudFront Distribution ID',
       value: imageDelivery.distributionId
+    });
+    } // End of SKIP_CLOUDFRONT !== 'true' block
+
+    // If CloudFront is skipped, add generic CloudFront permissions for manual configuration
+    if (SKIP_CLOUDFRONT === 'true') {
+      imageProcessing.addPermission("AllowCloudFrontServicePrincipal1", {
+        principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
+        action: "lambda:InvokeFunctionUrl",
+        sourceArn: `arn:aws:cloudfront::${this.account}:distribution/*`
+      });
+
+      imageProcessing.addPermission("AllowCloudFrontServicePrincipal2", {
+        principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
+        action: "lambda:InvokeFunction",
+        invokedViaFunctionUrl: true
+      });
+    }
+
+    // Output Lambda Function URL (always, for both deployment types)
+    new CfnOutput(this, 'LambdaFunctionURL', {
+      description: 'Lambda Function URL for image processing',
+      value: imageProcessingURL.url
+    });
+
+    new CfnOutput(this, 'LambdaFunctionName', {
+      description: 'Lambda Function Name',
+      value: imageProcessing.functionName
     });
   }
 }

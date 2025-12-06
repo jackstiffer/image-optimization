@@ -5,7 +5,8 @@ import { ImageOptimizationStack } from '../lib/image-optimization-stack';
 
 
 const app = new cdk.App();
-new ImageOptimizationStack(app, 'ImgTransformationStack', {
+const stackName = app.node.tryGetContext('STACK_NAME') || 'ImgTransformationStack';
+new ImageOptimizationStack(app, stackName, {
 
 });
 
